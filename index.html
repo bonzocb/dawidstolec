@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
 <head>
   <meta charset="UTF-8">
   <title>DAWID STOLEC GAME</title>
@@ -10,51 +10,70 @@
       font-family: sans-serif;
       background: #111;
       color: white;
-      text-align: center;
     }
     canvas {
       display: block;
       margin: 0 auto;
       background: #222;
     }
-    #startScreen {
+    #startScreen, #gameOverScreen {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.85);
       display: flex;
       justify-content: center;
       align-items: center;
       flex-direction: column;
+      z-index: 10;
     }
     button {
       padding: 10px 20px;
       font-size: 18px;
       cursor: pointer;
+      margin-top: 15px;
     }
-    #score {
+    #score, #lives {
       position: absolute;
-      top: 10px;
-      left: 10px;
       font-size: 20px;
       color: white;
+      z-index: 5;
+    }
+    #score {
+      top: 10px;
+      left: 10px;
+    }
+    #lives {
+      top: 10px;
+      right: 10px;
     }
   </style>
 </head>
 <body>
+  <audio id="bgm" src="muzyka.mp3" loop></audio>
+
   <div id="startScreen">
     <h1>DAWID STOLEC GAME</h1>
     <button onclick="startGame()">START</button>
   </div>
-  <div id="score">Score: 0</div>
+
+  <div id="gameOverScreen" style="display:none;">
+    <h1>GAME OVER</h1>
+    <button onclick="restartGame()">RESTART</button>
+  </div>
+
+  <div id="score">Wynik: 0</div>
+  <div id="lives">Życia: 5</div>
   <canvas id="gameCanvas" width="800" height="600"></canvas>
 
   <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const scoreDisplay = document.getElementById('score');
+    const livesDisplay = document.getElementById('lives');
+    const music = document.getElementById('bgm');
 
     let dawid = {
       x: 400,
@@ -65,15 +84,30 @@
       dy: 2.5
     };
 
+    const dawidImg = new Image();
+    dawidImg.src = 'dawid.png'; // ← podmień plik na własny (musi być w folderze)
+
+    let dawidReady = false;
+    dawidImg.onload = () => {
+      dawidReady = true;
+    };
+
     let poops = [];
     const poopSize = 30;
     let score = 0;
-
-    let dawidImg = new Image();
-    dawidImg.src = 'dawid.png'; // Podmień na 'dawid.png'
+    let lives = 5;
+    let missCounter = 0;
+    const missesPerLife = 5;
+    let gameRunning = false;
 
     function drawDawid() {
+      if (!dawidReady) return;
       ctx.drawImage(dawidImg, dawid.x, dawid.y, dawid.width, dawid.height);
+      let brownLevel = Math.floor(score / 50);
+      if (brownLevel > 0) {
+        ctx.fillStyle = `rgba(139,69,19,${Math.min(0.1 * brownLevel, 0.6)})`;
+        ctx.fillRect(dawid.x, dawid.y, dawid.width, dawid.height);
+      }
     }
 
     function drawPoops() {
@@ -87,46 +121,79 @@
       for (let p of poops) {
         p.y += 5;
       }
-      poops = poops.filter(p => {
-        if (p.y > canvas.height) return false;
-        if (p.x < dawid.x + dawid.width && p.x + poopSize > dawid.x && p.y < dawid.y + dawid.height && p.y + poopSize > dawid.y) {
+      const remaining = [];
+      for (let p of poops) {
+        if (p.y > canvas.height) continue;
+        if (
+          p.x < dawid.x + dawid.width &&
+          p.x + poopSize > dawid.x &&
+          p.y < dawid.y + dawid.height &&
+          p.y + poopSize > dawid.y
+        ) {
           score++;
-          scoreDisplay.textContent = 'Score: ' + score;
-          return false;
+          scoreDisplay.textContent = 'Wynik: ' + score;
+          missCounter = 0;
+          continue;
         }
-        return true;
-      });
+        remaining.push(p);
+      }
+      poops = remaining;
     }
 
     function moveDawid() {
       dawid.x += dawid.dx;
       dawid.y += dawid.dy;
-
-      if (dawid.x < 0 || dawid.x + dawid.width > canvas.width) {
-        dawid.dx *= -1;
-      }
-      if (dawid.y < 0 || dawid.y + dawid.height > canvas.height) {
-        dawid.dy *= -1;
-      }
+      if (dawid.x < 0 || dawid.x + dawid.width > canvas.width) dawid.dx *= -1;
+      if (dawid.y < 0 || dawid.y + dawid.height > canvas.height) dawid.dy *= -1;
     }
 
     function gameLoop() {
+      if (!gameRunning) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       moveDawid();
       updatePoops();
       drawDawid();
       drawPoops();
+      if (lives <= 0) {
+        gameRunning = false;
+        document.getElementById('gameOverScreen').style.display = 'flex';
+        return;
+      }
       requestAnimationFrame(gameLoop);
     }
 
     canvas.addEventListener('click', (e) => {
+      if (!gameRunning) return;
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       poops.push({ x: mouseX - poopSize / 2, y: 0 });
+      missCounter++;
+      if (missCounter >= missesPerLife) {
+        lives--;
+        missCounter = 0;
+        livesDisplay.textContent = 'Życia: ' + lives;
+      }
     });
 
     function startGame() {
       document.getElementById('startScreen').style.display = 'none';
+      music.play().catch(() => {});
+      gameRunning = true;
+      gameLoop();
+    }
+
+    function restartGame() {
+      score = 0;
+      lives = 5;
+      missCounter = 0;
+      dawid.x = 400;
+      dawid.y = 300;
+      poops = [];
+      scoreDisplay.textContent = 'Wynik: 0';
+      livesDisplay.textContent = 'Życia: 5';
+      document.getElementById('gameOverScreen').style.display = 'none';
+      music.play().catch(() => {});
+      gameRunning = true;
       gameLoop();
     }
   </script>
